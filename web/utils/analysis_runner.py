@@ -226,10 +226,14 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
         update_progress("配置分析参数...")
         config = DEFAULT_CONFIG.copy()
         config["llm_provider"] = llm_provider
-        config["deep_think_llm"] = "qwen3-max-2025-09-23"
-        config["quick_think_llm"] = "qwen-plus-2025-09-11"
+        config["deep_think_llm"] = llm_model
+        config["quick_think_llm"] = llm_model
         config["market_type"] = market_type
         config["asset_class"] = "crypto" if market_type == "加密货币" else "equity"
+        if market_type == "加密货币":
+            # 加密货币分析同样使用统一指定的模型组合
+            config["quick_think_llm"] = "qwen-plus-2025-09-11"
+            config["deep_think_llm"] = "qwen3-max-2025-09-23"
         # 根据研究深度调整配置
         if research_depth == 1:  # 1级 - 快速分析
             config["max_debate_rounds"] = 1
@@ -371,6 +375,10 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
             config["custom_openai_base_url"] = custom_base_url
             logger.info(f"🔧 [自定义OpenAI] 使用模型: {llm_model}")
             logger.info(f"🔧 [自定义OpenAI] API端点: {custom_base_url}")
+
+        # 无论市场与研究深度如何，统一指定使用的模型
+        config["quick_think_llm"] = "qwen-plus-2025-09-11"
+        config["deep_think_llm"] = "qwen3-max-2025-09-23"
 
         # 修复路径问题 - 优先使用环境变量配置
         # 数据目录：优先使用环境变量，否则使用默认路径
