@@ -41,7 +41,7 @@ def render_analysis_form():
         
         with col1:
             # 市场选择（使用缓存的值）
-            market_options = ["美股", "A股", "港股"]
+            market_options = ["美股", "A股", "港股", "加密货币"]
             cached_market = cached_config.get('market_type', 'A股') if cached_config else 'A股'
             try:
                 market_index = market_options.index(cached_market)
@@ -65,7 +65,7 @@ def render_analysis_form():
                     placeholder="输入美股代码，如 AAPL, TSLA, MSFT，然后按回车确认",
                     help="输入要分析的美股代码，输入完成后请按回车键确认",
                     key="us_stock_input",
-                    autocomplete="off"  # 修复autocomplete警告
+                    autocomplete="off"
                 ).upper().strip()
 
                 logger.debug(f"🔍 [FORM DEBUG] 美股text_input返回值: '{stock_symbol}'")
@@ -77,10 +77,23 @@ def render_analysis_form():
                     placeholder="输入港股代码，如 0700.HK, 9988.HK, 3690.HK，然后按回车确认",
                     help="输入要分析的港股代码，如 0700.HK(腾讯控股), 9988.HK(阿里巴巴), 3690.HK(美团)，输入完成后请按回车键确认",
                     key="hk_stock_input",
-                    autocomplete="off"  # 修复autocomplete警告
+                    autocomplete="off"
                 ).upper().strip()
 
                 logger.debug(f"🔍 [FORM DEBUG] 港股text_input返回值: '{stock_symbol}'")
+
+            elif market_type == "加密货币":
+                stock_symbol = st.text_input(
+                    "交易对 📈",
+                    value=cached_stock if (cached_config and cached_config.get('market_type') == '加密货币') else '',
+                    placeholder="输入加密货币交易对，如 BTC-USD, ETHUSDT，然后按回车确认",
+                    help="支持 Binance/交易所常见格式，如 BTC-USD、BTC/USDT、ETHUSDT",
+                    key="crypto_input",
+                    autocomplete="off"
+                ).upper().replace(' ', '')
+                stock_symbol = stock_symbol.replace('/', '-')
+
+                logger.debug(f"🔍 [FORM DEBUG] 加密货币text_input返回值: '{stock_symbol}'")
 
             else:  # A股
                 stock_symbol = st.text_input(
@@ -89,7 +102,7 @@ def render_analysis_form():
                     placeholder="输入A股代码，如 000001, 600519，然后按回车确认",
                     help="输入要分析的A股代码，如 000001(平安银行), 600519(贵州茅台)，输入完成后请按回车键确认",
                     key="cn_stock_input",
-                    autocomplete="off"  # 修复autocomplete警告
+                    autocomplete="off"
                 ).strip()
 
                 logger.debug(f"🔍 [FORM DEBUG] A股text_input返回值: '{stock_symbol}'")

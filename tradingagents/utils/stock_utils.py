@@ -4,7 +4,7 @@
 """
 
 import re
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple
 from enum import Enum
 
 # 导入统一日志系统
@@ -17,6 +17,7 @@ class StockMarket(Enum):
     CHINA_A = "china_a"      # 中国A股
     HONG_KONG = "hong_kong"  # 港股
     US = "us"                # 美股
+    CRYPTO = "crypto"        # 加密货币
     UNKNOWN = "unknown"      # 未知
 
 
@@ -50,6 +51,9 @@ class StockUtils:
         # 美股：1-5位字母
         if re.match(r'^[A-Z]{1,5}$', ticker):
             return StockMarket.US
+
+        if StockUtils._is_crypto_ticker(ticker):
+            return StockMarket.CRYPTO
             
         return StockMarket.UNKNOWN
     
@@ -93,6 +97,19 @@ class StockUtils:
         return StockUtils.identify_stock_market(ticker) == StockMarket.US
     
     @staticmethod
+    def is_crypto(ticker: str) -> bool:
+        """
+        判断是否为加密货币
+        
+        Args:
+            ticker: 交易对
+            
+        Returns:
+            bool: 是否为加密货币
+        """
+        return StockUtils.identify_stock_market(ticker) == StockMarket.CRYPTO
+    
+    @staticmethod
     def get_currency_info(ticker: str) -> Tuple[str, str]:
         """
         根据股票代码获取货币信息
@@ -111,6 +128,13 @@ class StockUtils:
             return "港币", "HK$"
         elif market == StockMarket.US:
             return "美元", "$"
+        elif market == StockMarket.CRYPTO:
+            _, quote = StockUtils._parse_crypto_pair(ticker)
+            if quote == "USDT":
+                return "泰达币", "USDT"
+            elif quote == "USD":
+                return "美元", "$"
+            return quote, quote
         else:
             return "未知", "?"
     
@@ -133,6 +157,8 @@ class StockUtils:
             return "yahoo_finance"  # 港股使用Yahoo Finance
         elif market == StockMarket.US:
             return "yahoo_finance"  # 美股使用Yahoo Finance
+        elif market == StockMarket.CRYPTO:
+            return "crypto"
         else:
             return "unknown"
     
@@ -163,6 +189,46 @@ class StockUtils:
         return ticker
     
     @staticmethod
+    def normalize_crypto_ticker(ticker: str) -> str:
+        """
+        标准化加密货币交易对格式
+        """
+        if not ticker:
+            return ticker
+
+        base, quote = StockUtils._parse_crypto_pair(ticker)
+        normalized_quote = "USD" if quote in {"USD", "USDT"} else quote
+        return f"{base}-{normalized_quote}"
+
+    @staticmethod
+    def _is_crypto_ticker(ticker: str) -> bool:
+        if not ticker:
+            return False
+
+        token = ticker.upper()
+        pattern_sep = re.compile(r'^[A-Z]{2,10}[-/](USDT|USD)$')
+        pattern_concat = re.compile(r'^[A-Z]{2,10}(USDT|USD)$')
+        return bool(pattern_sep.match(token) or pattern_concat.match(token))
+
+    @staticmethod
+    def _parse_crypto_pair(ticker: str) -> Tuple[str, str]:
+        if not ticker:
+            return "", ""
+
+        token = ticker.strip().upper().replace('/', '-')
+        if '-' in token:
+            base, quote = token.split('-', 1)
+        elif token.endswith('USDT'):
+            base, quote = token[:-4], 'USDT'
+        elif token.endswith('USD'):
+            base, quote = token[:-3], 'USD'
+        else:
+            base, quote = token, 'USDT'
+        base = base or token
+        quote = quote or 'USDT'
+        return base, quote
+
+    @staticmethod
     def get_market_info(ticker: str) -> Dict:
         """
         获取股票市场的详细信息
@@ -181,10 +247,11 @@ class StockUtils:
             StockMarket.CHINA_A: "中国A股",
             StockMarket.HONG_KONG: "港股",
             StockMarket.US: "美股",
+            StockMarket.CRYPTO: "加密货币",
             StockMarket.UNKNOWN: "未知市场"
         }
         
-        return {
+        info = {
             "ticker": ticker,
             "market": market.value,
             "market_name": market_names[market],
@@ -193,8 +260,14 @@ class StockUtils:
             "data_source": data_source,
             "is_china": market == StockMarket.CHINA_A,
             "is_hk": market == StockMarket.HONG_KONG,
-            "is_us": market == StockMarket.US
+            "is_us": market == StockMarket.US,
+            "is_crypto": market == StockMarket.CRYPTO
         }
+
+        if market == StockMarket.CRYPTO:
+            info["normalized_ticker"] = StockUtils.normalize_crypto_ticker(ticker)
+
+        return info
 
 
 # 便捷函数，保持向后兼容

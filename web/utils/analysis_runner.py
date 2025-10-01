@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from tradingagents.utils.logging_manager import get_logger, get_logger_manager
 logger = get_logger('web')
 
+from tradingagents.utils.stock_utils import StockUtils
+
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -224,8 +226,10 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
         update_progress("配置分析参数...")
         config = DEFAULT_CONFIG.copy()
         config["llm_provider"] = llm_provider
-        config["deep_think_llm"] = llm_model
-        config["quick_think_llm"] = llm_model
+        config["deep_think_llm"] = "qwen3-max-2025-09-23"
+        config["quick_think_llm"] = "qwen-plus-2025-09-11"
+        config["market_type"] = market_type
+        config["asset_class"] = "crypto" if market_type == "加密货币" else "equity"
         # 根据研究深度调整配置
         if research_depth == 1:  # 1级 - 快速分析
             config["max_debate_rounds"] = 1
@@ -428,23 +432,27 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
         logger.debug(f"🔍 [RUNNER DEBUG] 市场类型: '{market_type}'")
 
         if market_type == "A股":
-            # A股代码不需要特殊处理，保持原样
             formatted_symbol = stock_symbol
             logger.debug(f"🔍 [RUNNER DEBUG] A股代码保持原样: '{formatted_symbol}'")
             update_progress(f"🇨🇳 准备分析A股: {formatted_symbol}")
         elif market_type == "港股":
-            # 港股代码转为大写，确保.HK后缀
             formatted_symbol = stock_symbol.upper()
             if not formatted_symbol.endswith('.HK'):
-                # 如果是纯数字，添加.HK后缀
                 if formatted_symbol.isdigit():
                     formatted_symbol = f"{formatted_symbol.zfill(4)}.HK"
             update_progress(f"🇭🇰 准备分析港股: {formatted_symbol}")
-        else:
-            # 美股代码转为大写
+        elif market_type == "美股":
             formatted_symbol = stock_symbol.upper()
             logger.debug(f"🔍 [RUNNER DEBUG] 美股代码转大写: '{stock_symbol}' -> '{formatted_symbol}'")
             update_progress(f"🇺🇸 准备分析美股: {formatted_symbol}")
+        elif market_type == "加密货币":
+            formatted_symbol = StockUtils.normalize_crypto_ticker(stock_symbol)
+            logger.debug(f"🔍 [RUNNER DEBUG] 加密货币代码标准化: '{stock_symbol}' -> '{formatted_symbol}'")
+            update_progress(f"₿ 准备分析加密货币: {formatted_symbol}")
+        else:
+            formatted_symbol = stock_symbol
+            logger.warning(f"⚠️ 未识别的市场类型 '{market_type}'，保持原始代码: {formatted_symbol}")
+            update_progress(f"ℹ️ 准备分析资产: {formatted_symbol}")
 
         logger.debug(f"🔍 [RUNNER DEBUG] 最终传递给分析引擎的股票代码: '{formatted_symbol}'")
 
@@ -496,6 +504,8 @@ def run_stock_analysis(stock_symbol, analysis_date, analysts, research_depth, ll
 
         results = {
             'stock_symbol': stock_symbol,
+            'formatted_symbol': formatted_symbol,
+            'market_type': market_type,
             'analysis_date': analysis_date,
             'analysts': analysts,
             'research_depth': research_depth,
@@ -777,6 +787,12 @@ def validate_analysis_params(stock_symbol, analysis_date, analysts, research_dep
             import re
             if not re.match(r'^[A-Z]{1,5}$', symbol.upper()):
                 errors.append("美股代码格式错误，应为1-5位字母（如：AAPL）")
+        elif market_type == "加密货币":
+            import re
+            crypto_pattern = re.compile(r'^[A-Z]{2,10}[-/](USDT|USD)$')
+            concat_pattern = re.compile(r'^[A-Z]{2,10}(USDT|USD)$')
+            if not (crypto_pattern.match(symbol.upper()) or concat_pattern.match(symbol.upper())):
+                errors.append("加密货币交易对格式错误，应为 BTC-USD、BTC/USDT 或 BTCUSDT 等格式")
     
     # 验证分析师列表
     if not analysts or len(analysts) == 0:
@@ -817,6 +833,8 @@ def get_supported_stocks():
         {'symbol': 'INTC', 'name': '英特尔', 'sector': '科技'},
         {'symbol': 'SPY', 'name': 'S&P 500 ETF', 'sector': 'ETF'},
         {'symbol': 'QQQ', 'name': '纳斯达克100 ETF', 'sector': 'ETF'},
+        {'symbol': 'BTC-USD', 'name': '比特币', 'sector': '加密货币'},
+        {'symbol': 'ETH-USD', 'name': '以太坊', 'sector': '加密货币'},
     ]
     
     return popular_stocks

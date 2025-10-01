@@ -697,17 +697,17 @@ class Toolkit:
     @tool
     @log_tool_call(tool_name="get_stock_fundamentals_unified", log_args=True)
     def get_stock_fundamentals_unified(
-        ticker: Annotated[str, "股票代码（支持A股、港股、美股）"],
+        ticker: Annotated[str, "股票代码（支持A股、港股、美股、加密货币）"],
         start_date: Annotated[str, "开始日期，格式：YYYY-MM-DD"] = None,
         end_date: Annotated[str, "结束日期，格式：YYYY-MM-DD"] = None,
         curr_date: Annotated[str, "当前日期，格式：YYYY-MM-DD"] = None
     ) -> str:
         """
-        统一的股票基本面分析工具
-        自动识别股票类型（A股、港股、美股）并调用相应的数据源
+        统一的资产基本面分析工具
+        自动识别股票/加密货币类型并调用相应的数据源
 
         Args:
-            ticker: 股票代码（如：000001、0700.HK、AAPL）
+            ticker: 资产代码（如：000001、0700.HK、AAPL、BTC-USD）
             start_date: 开始日期（可选，格式：YYYY-MM-DD）
             end_date: 结束日期（可选，格式：YYYY-MM-DD）
             curr_date: 当前日期（可选，格式：YYYY-MM-DD）
@@ -715,35 +715,32 @@ class Toolkit:
         Returns:
             str: 基本面分析数据和报告
         """
-        logger.info(f"📊 [统一基本面工具] 分析股票: {ticker}")
+        logger.info(f"📊 [统一基本面工具] 分析标的: {ticker}")
 
-        # 添加详细的股票代码追踪日志
-        logger.info(f"🔍 [股票代码追踪] 统一基本面工具接收到的原始股票代码: '{ticker}' (类型: {type(ticker)})")
-        logger.info(f"🔍 [股票代码追踪] 股票代码长度: {len(str(ticker))}")
-        logger.info(f"🔍 [股票代码追踪] 股票代码字符: {list(str(ticker))}")
+        logger.info(f"🔍 [股票代码追踪] 统一基本面工具接收到的原始代码: '{ticker}' (类型: {type(ticker)})")
+        logger.info(f"🔍 [股票代码追踪] 代码长度: {len(str(ticker))}")
+        logger.info(f"🔍 [股票代码追踪] 代码字符: {list(str(ticker))}")
 
-        # 保存原始ticker用于对比
         original_ticker = ticker
 
         try:
             from tradingagents.utils.stock_utils import StockUtils
             from datetime import datetime, timedelta
 
-            # 自动识别股票类型
             market_info = StockUtils.get_market_info(ticker)
             is_china = market_info['is_china']
             is_hk = market_info['is_hk']
             is_us = market_info['is_us']
+            is_crypto = market_info.get('is_crypto', False)
+            display_ticker = market_info.get('normalized_ticker', ticker)
 
-            logger.info(f"🔍 [股票代码追踪] StockUtils.get_market_info 返回的市场信息: {market_info}")
-            logger.info(f"📊 [统一基本面工具] 股票类型: {market_info['market_name']}")
+            logger.info(f"🔍 [股票代码追踪] 市场信息: {market_info}")
+            logger.info(f"📊 [统一基本面工具] 市场: {market_info['market_name']}")
             logger.info(f"📊 [统一基本面工具] 货币: {market_info['currency_name']} ({market_info['currency_symbol']})")
 
-            # 检查ticker是否在处理过程中发生了变化
             if str(ticker) != str(original_ticker):
-                logger.warning(f"🔍 [股票代码追踪] 警告：股票代码发生了变化！原始: '{original_ticker}' -> 当前: '{ticker}'")
+                logger.warning(f"🔍 [股票代码追踪] 代码已标准化: '{original_ticker}' -> '{ticker}'")
 
-            # 设置默认日期
             if not curr_date:
                 curr_date = datetime.now().strftime('%Y-%m-%d')
             if not start_date:
@@ -754,61 +751,41 @@ class Toolkit:
             result_data = []
 
             if is_china:
-                # 中国A股：获取股票数据 + 基本面数据
                 logger.info(f"🇨🇳 [统一基本面工具] 处理A股数据...")
-                logger.info(f"🔍 [股票代码追踪] 进入A股处理分支，ticker: '{ticker}'")
-
                 try:
-                    # 获取股票价格数据
                     from tradingagents.dataflows.interface import get_china_stock_data_unified
-                    logger.info(f"🔍 [股票代码追踪] 调用 get_china_stock_data_unified，传入参数: ticker='{ticker}', start_date='{start_date}', end_date='{end_date}'")
                     stock_data = get_china_stock_data_unified(ticker, start_date, end_date)
-                    logger.info(f"🔍 [股票代码追踪] get_china_stock_data_unified 返回结果前200字符: {stock_data[:200] if stock_data else 'None'}")
                     result_data.append(f"## A股价格数据\n{stock_data}")
                 except Exception as e:
-                    logger.error(f"🔍 [股票代码追踪] get_china_stock_data_unified 调用失败: {e}")
                     result_data.append(f"## A股价格数据\n获取失败: {e}")
 
                 try:
-                    # 获取基本面数据
                     from tradingagents.dataflows.optimized_china_data import OptimizedChinaDataProvider
                     analyzer = OptimizedChinaDataProvider()
-                    logger.info(f"🔍 [股票代码追踪] 调用 OptimizedChinaDataProvider._generate_fundamentals_report，传入参数: ticker='{ticker}'")
                     fundamentals_data = analyzer._generate_fundamentals_report(ticker, stock_data if 'stock_data' in locals() else "")
-                    logger.info(f"🔍 [股票代码追踪] _generate_fundamentals_report 返回结果前200字符: {fundamentals_data[:200] if fundamentals_data else 'None'}")
                     result_data.append(f"## A股基本面数据\n{fundamentals_data}")
                 except Exception as e:
-                    logger.error(f"🔍 [股票代码追踪] _generate_fundamentals_report 调用失败: {e}")
                     result_data.append(f"## A股基本面数据\n获取失败: {e}")
 
             elif is_hk:
-                # 港股：使用AKShare数据源，支持多重备用方案
                 logger.info(f"🇭🇰 [统一基本面工具] 处理港股数据...")
-
                 hk_data_success = False
 
-                # 主要数据源：AKShare
                 try:
                     from tradingagents.dataflows.interface import get_hk_stock_data_unified
                     hk_data = get_hk_stock_data_unified(ticker, start_date, end_date)
-
-                    # 检查数据质量
                     if hk_data and len(hk_data) > 100 and "❌" not in hk_data:
                         result_data.append(f"## 港股数据\n{hk_data}")
                         hk_data_success = True
-                        logger.info(f"✅ [统一基本面工具] 港股主要数据源成功")
                     else:
                         logger.warning(f"⚠️ [统一基本面工具] 港股主要数据源质量不佳")
-
                 except Exception as e:
                     logger.error(f"⚠️ [统一基本面工具] 港股主要数据源失败: {e}")
 
-                # 备用方案：基础港股信息
                 if not hk_data_success:
                     try:
                         from tradingagents.dataflows.interface import get_hk_stock_info_unified
                         hk_info = get_hk_stock_info_unified(ticker)
-
                         basic_info = f"""## 港股基础信息
 
 **股票代码**: {ticker}
@@ -818,17 +795,9 @@ class Toolkit:
 **数据源**: {hk_info.get('source', '基础信息')}
 
 ⚠️ 注意：详细的价格和财务数据暂时无法获取，建议稍后重试或使用其他数据源。
-
-**基本面分析建议**：
-- 建议查看公司最新财报
-- 关注港股市场整体走势
-- 考虑汇率因素对投资的影响
 """
                         result_data.append(basic_info)
-                        logger.info(f"✅ [统一基本面工具] 港股备用信息成功")
-
                     except Exception as e2:
-                        # 最终备用方案
                         fallback_info = f"""## 港股信息（备用）
 
 **股票代码**: {ticker}
@@ -842,15 +811,11 @@ class Toolkit:
 1. 检查网络连接
 2. 稍后重试分析
 3. 使用其他港股数据源
-4. 查看公司官方财报
 """
                         result_data.append(fallback_info)
-                        logger.warning(f"⚠️ [统一基本面工具] 港股使用最终备用方案")
 
-            else:
-                # 美股：使用OpenAI/Finnhub数据源
+            elif is_us:
                 logger.info(f"🇺🇸 [统一基本面工具] 处理美股数据...")
-
                 try:
                     from tradingagents.dataflows.interface import get_fundamentals_openai
                     us_data = get_fundamentals_openai(ticker, curr_date)
@@ -858,17 +823,61 @@ class Toolkit:
                 except Exception as e:
                     result_data.append(f"## 美股基本面数据\n获取失败: {e}")
 
-            # 组合所有数据
-            combined_result = f"""# {ticker} 基本面分析数据
+            elif is_crypto:
+                logger.info(f"₿ [统一基本面工具] 处理加密货币数据...")
+                normalized = market_info.get('normalized_ticker', StockUtils.normalize_crypto_ticker(ticker))
+                try:
+                    from tradingagents.dataflows.interface import get_crypto_info_unified
+                    info_result = get_crypto_info_unified(normalized)
+                    if info_result.get('success'):
+                        display_name = info_result.get('display_name', normalized)
+                        cache_status = info_result.get('cache_status', '基础数据已加载')
+                        info_block = "\n".join([
+                            "## 加密货币基础信息",
+                            f"**交易对**: {display_name}",
+                            "**数据源**: Yahoo Finance",
+                            f"**缓存**: {cache_status}",
+                        ])
+                        result_data.append(info_block)
+                    else:
+                        result_data.append(
+                            f"## 加密货币基础信息\n获取失败: {info_result.get('message', '未知错误')}"
+                        )
+                except Exception as e:
+                    result_data.append(f"## 加密货币基础信息\n获取失败: {e}")
 
-**股票类型**: {market_info['market_name']}
+                try:
+                    from tradingagents.dataflows.interface import get_crypto_price_unified
+                    price_result = get_crypto_price_unified(normalized, start_date, end_date)
+                    if price_result.get('success'):
+                        price_data = price_result.get('data', '')
+                        cache_status = price_result.get('cache_status', '')
+                        block = f"## 加密货币价格数据\n{price_data}"
+                        if cache_status:
+                            block += f"\n\n缓存: {cache_status}"
+                        result_data.append(block)
+                    else:
+                        result_data.append(
+                            f"## 加密货币价格数据\n获取失败: {price_result.get('message', '未知错误')}"
+                        )
+                except Exception as e:
+                    result_data.append(f"## 加密货币价格数据\n获取失败: {e}")
+
+                result_data.append("*提示：当前暂未接入链上指标，请结合市场情绪与宏观信息综合判断。*")
+
+            else:
+                result_data.append("未识别的市场类型，暂不支持该资产的基本面分析。")
+
+            combined_result = f"""# {display_ticker} 基本面分析数据
+
+**市场类型**: {market_info['market_name']}
 **货币**: {market_info['currency_name']} ({market_info['currency_symbol']})
 **分析日期**: {curr_date}
 
 {chr(10).join(result_data)}
 
 ---
-*数据来源: 根据股票类型自动选择最适合的数据源*
+*数据来源: 根据资产类型自动选择最适合的数据源*
 """
 
             logger.info(f"📊 [统一基本面工具] 数据获取完成，总长度: {len(combined_result)}")
@@ -879,46 +888,46 @@ class Toolkit:
             logger.error(f"❌ [统一基本面工具] {error_msg}")
             return error_msg
 
+
     @staticmethod
     @tool
     @log_tool_call(tool_name="get_stock_market_data_unified", log_args=True)
     def get_stock_market_data_unified(
-        ticker: Annotated[str, "股票代码（支持A股、港股、美股）"],
+        ticker: Annotated[str, "股票代码（支持A股、港股、美股、加密货币）"],
         start_date: Annotated[str, "开始日期，格式：YYYY-MM-DD"],
         end_date: Annotated[str, "结束日期，格式：YYYY-MM-DD"]
     ) -> str:
         """
-        统一的股票市场数据工具
-        自动识别股票类型（A股、港股、美股）并调用相应的数据源获取价格和技术指标数据
+        统一的市场数据工具
+        自动识别资产类型并调用相应的数据源获取价格和技术指标数据
 
         Args:
-            ticker: 股票代码（如：000001、0700.HK、AAPL）
+            ticker: 资产代码（如：000001、0700.HK、AAPL、BTC-USD）
             start_date: 开始日期（格式：YYYY-MM-DD）
             end_date: 结束日期（格式：YYYY-MM-DD）
 
         Returns:
             str: 市场数据和技术分析报告
         """
-        logger.info(f"📈 [统一市场工具] 分析股票: {ticker}")
+        logger.info(f"📈 [统一市场工具] 分析标的: {ticker}")
 
         try:
             from tradingagents.utils.stock_utils import StockUtils
 
-            # 自动识别股票类型
             market_info = StockUtils.get_market_info(ticker)
             is_china = market_info['is_china']
             is_hk = market_info['is_hk']
             is_us = market_info['is_us']
+            is_crypto = market_info.get('is_crypto', False)
+            display_ticker = market_info.get('normalized_ticker', ticker)
 
-            logger.info(f"📈 [统一市场工具] 股票类型: {market_info['market_name']}")
-            logger.info(f"📈 [统一市场工具] 货币: {market_info['currency_name']} ({market_info['currency_symbol']}")
+            logger.info(f"📈 [统一市场工具] 资产类型: {market_info['market_name']}")
+            logger.info(f"📈 [统一市场工具] 货币: {market_info['currency_name']} ({market_info['currency_symbol']})")
 
             result_data = []
 
             if is_china:
-                # 中国A股：使用中国股票数据源
                 logger.info(f"🇨🇳 [统一市场工具] 处理A股市场数据...")
-
                 try:
                     from tradingagents.dataflows.interface import get_china_stock_data_unified
                     stock_data = get_china_stock_data_unified(ticker, start_date, end_date)
@@ -927,9 +936,7 @@ class Toolkit:
                     result_data.append(f"## A股市场数据\n获取失败: {e}")
 
             elif is_hk:
-                # 港股：使用AKShare数据源
                 logger.info(f"🇭🇰 [统一市场工具] 处理港股市场数据...")
-
                 try:
                     from tradingagents.dataflows.interface import get_hk_stock_data_unified
                     hk_data = get_hk_stock_data_unified(ticker, start_date, end_date)
@@ -937,10 +944,8 @@ class Toolkit:
                 except Exception as e:
                     result_data.append(f"## 港股市场数据\n获取失败: {e}")
 
-            else:
-                # 美股：优先使用FINNHUB API数据源
+            elif is_us:
                 logger.info(f"🇺🇸 [统一市场工具] 处理美股市场数据...")
-
                 try:
                     from tradingagents.dataflows.optimized_us_data import get_us_stock_data_cached
                     us_data = get_us_stock_data_cached(ticker, start_date, end_date)
@@ -948,17 +953,39 @@ class Toolkit:
                 except Exception as e:
                     result_data.append(f"## 美股市场数据\n获取失败: {e}")
 
-            # 组合所有数据
-            combined_result = f"""# {ticker} 市场数据分析
+            elif is_crypto:
+                logger.info(f"₿ [统一市场工具] 处理加密货币市场数据...")
+                normalized = market_info.get('normalized_ticker', StockUtils.normalize_crypto_ticker(ticker))
+                try:
+                    from tradingagents.dataflows.interface import get_crypto_price_unified
+                    price_result = get_crypto_price_unified(normalized, start_date, end_date)
+                    if price_result.get('success'):
+                        data_text = price_result.get('data', '')
+                        cache_status = price_result.get('cache_status', '')
+                        block = f"## 加密货币价格数据\n{data_text}"
+                        if cache_status:
+                            block += f"\n\n缓存: {cache_status}"
+                        result_data.append(block)
+                    else:
+                        result_data.append(
+                            f"## 加密货币价格数据\n获取失败: {price_result.get('message', '未知错误')}"
+                        )
+                except Exception as e:
+                    result_data.append(f"## 加密货币价格数据\n获取失败: {e}")
 
-**股票类型**: {market_info['market_name']}
+            else:
+                result_data.append("未识别的市场类型，暂不支持该资产的市场数据分析。")
+
+            combined_result = f"""# {display_ticker} 市场数据分析
+
+**资产类型**: {market_info['market_name']}
 **货币**: {market_info['currency_name']} ({market_info['currency_symbol']})
 **分析期间**: {start_date} 至 {end_date}
 
 {chr(10).join(result_data)}
 
 ---
-*数据来源: 根据股票类型自动选择最适合的数据源*
+*数据来源: 根据资产类型自动选择最适合的数据源*
 """
 
             logger.info(f"📈 [统一市场工具] 数据获取完成，总长度: {len(combined_result)}")
@@ -969,39 +996,39 @@ class Toolkit:
             logger.error(f"❌ [统一市场工具] {error_msg}")
             return error_msg
 
+
     @staticmethod
     @tool
     @log_tool_call(tool_name="get_stock_news_unified", log_args=True)
     def get_stock_news_unified(
-        ticker: Annotated[str, "股票代码（支持A股、港股、美股）"],
+        ticker: Annotated[str, "股票代码（支持A股、港股、美股、加密货币）"],
         curr_date: Annotated[str, "当前日期，格式：YYYY-MM-DD"]
     ) -> str:
         """
-        统一的股票新闻工具
-        自动识别股票类型（A股、港股、美股）并调用相应的新闻数据源
+        统一的新闻工具，自动识别资产类型并调用相应的数据源
 
         Args:
-            ticker: 股票代码（如：000001、0700.HK、AAPL）
+            ticker: 资产代码（如：000001、0700.HK、AAPL、BTC-USD）
             curr_date: 当前日期（格式：YYYY-MM-DD）
 
         Returns:
             str: 新闻分析报告
         """
-        logger.info(f"📰 [统一新闻工具] 分析股票: {ticker}")
+        logger.info(f"📰 [统一新闻工具] 分析标的: {ticker}")
 
         try:
             from tradingagents.utils.stock_utils import StockUtils
             from datetime import datetime, timedelta
 
-            # 自动识别股票类型
             market_info = StockUtils.get_market_info(ticker)
             is_china = market_info['is_china']
             is_hk = market_info['is_hk']
             is_us = market_info['is_us']
+            is_crypto = market_info.get('is_crypto', False)
+            display_ticker = market_info.get('normalized_ticker', ticker)
 
-            logger.info(f"📰 [统一新闻工具] 股票类型: {market_info['market_name']}")
+            logger.info(f"📰 [统一新闻工具] 资产类型: {market_info['market_name']}")
 
-            # 计算新闻查询的日期范围
             end_date = datetime.strptime(curr_date, '%Y-%m-%d')
             start_date = end_date - timedelta(days=7)
             start_date_str = start_date.strftime('%Y-%m-%d')
@@ -1009,69 +1036,51 @@ class Toolkit:
             result_data = []
 
             if is_china or is_hk:
-                # 中国A股和港股：使用AKShare东方财富新闻和Google新闻（中文搜索）
                 logger.info(f"🇨🇳🇭🇰 [统一新闻工具] 处理中文新闻...")
 
-                # 1. 尝试获取AKShare东方财富新闻
                 try:
-                    # 处理股票代码
-                    clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
-                                   .replace('.HK', '').replace('.XSHE', '').replace('.XSHG', '')
-                    
-                    logger.info(f"🇨🇳🇭🇰 [统一新闻工具] 尝试获取东方财富新闻: {clean_ticker}")
-                    
-                    # 导入AKShare新闻获取函数
+                    clean_ticker = (
+                        ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '')
+                              .replace('.HK', '').replace('.XSHE', '').replace('.XSHG', '')
+                    )
                     from tradingagents.dataflows.akshare_utils import get_stock_news_em
-                    
-                    # 获取东方财富新闻
                     news_df = get_stock_news_em(clean_ticker)
-                    
                     if not news_df.empty:
-                        # 格式化东方财富新闻
-                        em_news_items = []
+                        items = []
                         for _, row in news_df.iterrows():
-                            news_title = row.get('标题', '')
-                            news_time = row.get('时间', '')
-                            news_url = row.get('链接', '')
-                            
-                            news_item = f"- **{news_title}** [{news_time}]({news_url})"
-                            em_news_items.append(news_item)
-                        
-                        # 添加到结果中
-                        if em_news_items:
-                            em_news_text = "\n".join(em_news_items)
-                            result_data.append(f"## 东方财富新闻\n{em_news_text}")
-                            logger.info(f"🇨🇳🇭🇰 [统一新闻工具] 成功获取{len(em_news_items)}条东方财富新闻")
+                            title = row.get('标题', '')
+                            ts = row.get('时间', '')
+                            url = row.get('链接', '')
+                            items.append(f"- **{title}** [{ts}]({url})")
+                        if items:
+                            result_data.append("## 东方财富新闻\n" + "\n".join(items))
                 except Exception as em_e:
                     logger.error(f"❌ [统一新闻工具] 东方财富新闻获取失败: {em_e}")
                     result_data.append(f"## 东方财富新闻\n获取失败: {em_e}")
 
-                # 2. 获取Google新闻作为补充
                 try:
-                    # 获取公司中文名称用于搜索
                     if is_china:
-                        # A股使用股票代码搜索，添加更多中文关键词
-                        clean_ticker = ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '')\
-                                       .replace('.XSHE', '').replace('.XSHG', '')
+                        clean_ticker = (
+                            ticker.replace('.SH', '').replace('.SZ', '').replace('.SS', '')
+                                  .replace('.XSHE', '').replace('.XSHG', '')
+                        )
                         search_query = f"{clean_ticker} 股票 公司 财报 新闻"
-                        logger.info(f"🇨🇳 [统一新闻工具] A股Google新闻搜索关键词: {search_query}")
                     else:
-                        # 港股使用代码搜索
                         search_query = f"{ticker} 港股"
-                        logger.info(f"🇭🇰 [统一新闻工具] 港股Google新闻搜索关键词: {search_query}")
-
                     from tradingagents.dataflows.interface import get_google_news
                     news_data = get_google_news(search_query, curr_date)
                     result_data.append(f"## Google新闻\n{news_data}")
-                    logger.info(f"🇨🇳🇭🇰 [统一新闻工具] 成功获取Google新闻")
                 except Exception as google_e:
-                    logger.error(f"❌ [统一新闻工具] Google新闻获取失败: {google_e}")
                     result_data.append(f"## Google新闻\n获取失败: {google_e}")
 
-            else:
-                # 美股：使用Finnhub新闻
-                logger.info(f"🇺🇸 [统一新闻工具] 处理美股新闻...")
+            elif is_crypto:
+                logger.info(f"₿ [统一新闻工具] 处理加密货币新闻...")
+                result_data.append(
+                    "当前版本暂未接入加密货币新闻源，建议关注交易所公告、CryptoPanic 等资讯平台。"
+                )
 
+            elif is_us:
+                logger.info(f"🇺🇸 [统一新闻工具] 处理美股新闻...")
                 try:
                     from tradingagents.dataflows.interface import get_finnhub_news
                     news_data = get_finnhub_news(ticker, start_date_str, curr_date)
@@ -1079,17 +1088,19 @@ class Toolkit:
                 except Exception as e:
                     result_data.append(f"## 美股新闻\n获取失败: {e}")
 
-            # 组合所有数据
-            combined_result = f"""# {ticker} 新闻分析
+            else:
+                result_data.append("未识别的市场类型，暂不支持该资产的新闻分析。")
 
-**股票类型**: {market_info['market_name']}
+            combined_result = f"""# {display_ticker} 新闻分析
+
+**资产类型**: {market_info['market_name']}
 **分析日期**: {curr_date}
 **新闻时间范围**: {start_date_str} 至 {curr_date}
 
 {chr(10).join(result_data)}
 
 ---
-*数据来源: 根据股票类型自动选择最适合的新闻源*
+*数据来源: 根据资产类型自动选择最适合的新闻源*
 """
 
             logger.info(f"📰 [统一新闻工具] 数据获取完成，总长度: {len(combined_result)}")
@@ -1100,60 +1111,59 @@ class Toolkit:
             logger.error(f"❌ [统一新闻工具] {error_msg}")
             return error_msg
 
+
+
     @staticmethod
     @tool
     @log_tool_call(tool_name="get_stock_sentiment_unified", log_args=True)
     def get_stock_sentiment_unified(
-        ticker: Annotated[str, "股票代码（支持A股、港股、美股）"],
+        ticker: Annotated[str, "股票代码（支持A股、港股、美股、加密货币）"],
         curr_date: Annotated[str, "当前日期，格式：YYYY-MM-DD"]
     ) -> str:
         """
-        统一的股票情绪分析工具
-        自动识别股票类型（A股、港股、美股）并调用相应的情绪数据源
+        统一的情绪分析工具
+        自动识别资产类型并调用相应的情绪数据源
 
         Args:
-            ticker: 股票代码（如：000001、0700.HK、AAPL）
+            ticker: 资产代码（如：000001、0700.HK、AAPL、BTC-USD）
             curr_date: 当前日期（格式：YYYY-MM-DD）
 
         Returns:
             str: 情绪分析报告
         """
-        logger.info(f"😊 [统一情绪工具] 分析股票: {ticker}")
+        logger.info(f"😊 [统一情绪工具] 分析标的: {ticker}")
 
         try:
             from tradingagents.utils.stock_utils import StockUtils
 
-            # 自动识别股票类型
             market_info = StockUtils.get_market_info(ticker)
             is_china = market_info['is_china']
             is_hk = market_info['is_hk']
             is_us = market_info['is_us']
+            is_crypto = market_info.get('is_crypto', False)
+            display_ticker = market_info.get('normalized_ticker', ticker)
 
-            logger.info(f"😊 [统一情绪工具] 股票类型: {market_info['market_name']}")
+            logger.info(f"😊 [统一情绪工具] 资产类型: {market_info['market_name']}")
 
             result_data = []
 
             if is_china or is_hk:
-                # 中国A股和港股：使用社交媒体情绪分析
                 logger.info(f"🇨🇳🇭🇰 [统一情绪工具] 处理中文市场情绪...")
-
                 try:
-                    # 可以集成微博、雪球、东方财富等中文社交媒体情绪
-                    # 目前使用基础的情绪分析
                     sentiment_summary = f"""
 ## 中文市场情绪分析
 
-**股票**: {ticker} ({market_info['market_name']})
+**标的**: {display_ticker} ({market_info['market_name']})
 **分析日期**: {curr_date}
 
-### 市场情绪概况
-- 由于中文社交媒体情绪数据源暂未完全集成，当前提供基础分析
-- 建议关注雪球、东方财富、同花顺等平台的讨论热度
-- 港股市场还需关注香港本地财经媒体情绪
+### 情绪概况
+- 中文社交媒体情绪数据源正在接入中，目前提供基础参考
+- 建议结合雪球、东方财富、同花顺等平台的讨论热度
+- 港股需关注香港本地财经媒体情绪与政策变化
 
-### 情绪指标
+### 初步判断
 - 整体情绪: 中性
-- 讨论热度: 待分析
+- 讨论热度: 待采集
 - 投资者信心: 待评估
 
 *注：完整的中文社交媒体情绪分析功能正在开发中*
@@ -1162,28 +1172,33 @@ class Toolkit:
                 except Exception as e:
                     result_data.append(f"## 中文市场情绪\n获取失败: {e}")
 
-            else:
-                # 美股：使用Reddit情绪分析
-                logger.info(f"🇺🇸 [统一情绪工具] 处理美股情绪...")
+            elif is_crypto:
+                logger.info(f"₿ [统一情绪工具] 处理加密货币情绪...")
+                result_data.append(
+                    "当前暂未接入加密货币情绪数据。建议关注 CryptoPanic、Alternative.me Fear & Greed 指数等公开指标。"
+                )
 
+            elif is_us:
+                logger.info(f"🇺🇸 [统一情绪工具] 处理美股情绪...")
                 try:
                     from tradingagents.dataflows.interface import get_reddit_sentiment
-
                     sentiment_data = get_reddit_sentiment(ticker, curr_date)
                     result_data.append(f"## 美股Reddit情绪\n{sentiment_data}")
                 except Exception as e:
                     result_data.append(f"## 美股Reddit情绪\n获取失败: {e}")
 
-            # 组合所有数据
-            combined_result = f"""# {ticker} 情绪分析
+            else:
+                result_data.append("未识别的市场类型，暂不支持该资产的情绪分析。")
 
-**股票类型**: {market_info['market_name']}
+            combined_result = f"""# {display_ticker} 情绪分析
+
+**资产类型**: {market_info['market_name']}
 **分析日期**: {curr_date}
 
 {chr(10).join(result_data)}
 
 ---
-*数据来源: 根据股票类型自动选择最适合的情绪数据源*
+*数据来源: 根据资产类型自动选择最适合的情绪数据源*
 """
 
             logger.info(f"😊 [统一情绪工具] 数据获取完成，总长度: {len(combined_result)}")
@@ -1193,3 +1208,4 @@ class Toolkit:
             error_msg = f"统一情绪分析工具执行失败: {str(e)}"
             logger.error(f"❌ [统一情绪工具] {error_msg}")
             return error_msg
+

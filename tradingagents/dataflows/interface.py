@@ -1388,6 +1388,74 @@ def get_current_china_data_source() -> str:
         logger.error(f"❌ 获取数据源信息失败: {e}")
         return f"❌ 获取数据源信息失败: {e}"
 
+# ==================== 加密货币数据接口 ====================
+
+def _format_crypto_dataframe(df):
+    if df is None or df.empty:
+        return ''
+    df = df.copy()
+    if df.index.name == 'Date' or isinstance(df.index, pd.DatetimeIndex):
+        try:
+            df.index = df.index.tz_localize(None)
+        except Exception:
+            pass
+        df.index = df.index.strftime('%Y-%m-%d')
+    columns = {'Open': '开盘', 'High': '最高', 'Low': '最低', 'Close': '收盘', 'Adj Close': '复权收盘', 'Volume': '成交量'}
+    df = df.rename(columns={col: columns.get(col, col) for col in df.columns})
+    display_cols = [col for col in ['开盘', '最高', '最低', '收盘', '成交量'] if col in df.columns]
+    if display_cols:
+        df = df[display_cols]
+    return df.tail(30).to_string()
+
+def get_crypto_info_unified(symbol: str) -> Dict:
+    symbol = symbol.strip().upper() if symbol else ''
+    if not symbol:
+        return {'success': False, 'message': '交易对不能为空'}
+    if not YF_AVAILABLE:
+        return {'success': False, 'message': 'yfinance库不可用'}
+    normalized = symbol.replace('/', '-')
+    try:
+        logger.info(f"₿ 获取加密货币信息: {normalized}")
+        data = yf.download(normalized, period='5d', interval='1d')
+        if data is None or data.empty:
+            return {'success': False, 'message': f'未找到加密货币 {normalized} 的基础数据'}
+        base, quote = normalized.split('-') if '-' in normalized else (normalized[:-4], normalized[-4:])
+        display_name = f"{base}/{quote}" if base and quote else normalized
+        cache_status = f"基础数据已加载({len(data)}行)"
+        return {
+            'success': True,
+            'symbol': normalized,
+            'display_name': display_name,
+            'cache_status': cache_status,
+        }
+    except Exception as e:
+        logger.error(f"❌ 获取加密货币信息失败: {e}")
+        return {'success': False, 'message': f'获取加密货币信息失败: {e}'}
+
+def get_crypto_price_unified(symbol: str, start_date: str, end_date: str) -> Dict:
+    symbol = symbol.strip().upper() if symbol else ''
+    if not symbol:
+        return {'success': False, 'message': '交易对不能为空'}
+    if not YF_AVAILABLE:
+        return {'success': False, 'message': 'yfinance库不可用'}
+    normalized = symbol.replace('/', '-')
+    try:
+        logger.info(f"₿ 获取加密货币行情: {normalized} {start_date} -> {end_date}")
+        data = yf.download(normalized, start=start_date, end=end_date, interval='1d')
+        if data is None or data.empty:
+            return {'success': False, 'message': f'未获取到 {normalized} 的价格数据'}
+        formatted = _format_crypto_dataframe(data)
+        return {
+            'success': True,
+            'symbol': normalized,
+            'rows': len(data),
+            'data': formatted,
+            'cache_status': f'历史数据已获取（{len(data)}行）',
+        }
+    except Exception as e:
+        logger.error(f"❌ 获取加密货币行情失败: {e}")
+        return {'success': False, 'message': f'获取加密货币行情失败: {e}'}
+
 
 # ==================== 港股数据接口 ====================
 

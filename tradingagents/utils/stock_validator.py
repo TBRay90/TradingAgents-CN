@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from tradingagents.utils.logging_manager import get_logger
 logger = get_logger('stock_validator')
 
+from tradingagents.utils.stock_utils import StockUtils
+
 
 class StockDataPreparationResult:
     """股票数据预获取结果类"""
@@ -145,6 +147,18 @@ class StockDataPreparer:
                     error_message="美股代码格式错误，应为1-5位字母",
                     suggestion="请输入1-5位字母的美股代码，如：AAPL、TSLA"
                 )
+        elif market_type == "加密货币":
+            crypto_pattern = re.compile(r'^[A-Z]{2,10}[-/](USDT|USD)$', re.IGNORECASE)
+            concat_pattern = re.compile(r'^[A-Z]{2,10}(USDT|USD)$', re.IGNORECASE)
+            normalized = stock_code.upper()
+            if not (crypto_pattern.match(normalized) or concat_pattern.match(normalized)):
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=stock_code,
+                    market_type="加密货币",
+                    error_message="加密货币交易对格式错误",
+                    suggestion="请输入形如 BTC-USD、ETHUSDT 或 BTC/USDT 的交易对"
+                )
         
         return StockDataPreparationResult(
             is_valid=True,
@@ -167,6 +181,12 @@ class StockDataPreparer:
         # 美股：1-5位字母
         if re.match(r'^[A-Z]{1,5}$', stock_code):
             return "美股"
+
+        # 加密货币：支持 BTC-USD、BTC/USDT、BTCUSDT 等
+        crypto_pattern = re.compile(r'^[A-Z]{2,10}[-/](USDT|USD)$')
+        concat_pattern = re.compile(r'^[A-Z]{2,10}(USDT|USD)$')
+        if crypto_pattern.match(stock_code) or concat_pattern.match(stock_code):
+            return "加密货币"
         
         return "未知"
 
@@ -271,13 +291,15 @@ class StockDataPreparer:
                 return self._prepare_hk_stock_data(stock_code, period_days, analysis_date)
             elif market_type == "美股":
                 return self._prepare_us_stock_data(stock_code, period_days, analysis_date)
+            elif market_type == "加密货币":
+                return self._prepare_crypto_data(stock_code, period_days, analysis_date)
             else:
                 return StockDataPreparationResult(
                     is_valid=False,
                     stock_code=stock_code,
                     market_type=market_type,
                     error_message=f"不支持的市场类型: {market_type}",
-                    suggestion="请选择支持的市场类型：A股、港股、美股"
+                    suggestion="请选择支持的市场类型：A股、港股、美股、加密货币"
                 )
         except Exception as e:
             logger.error(f"❌ [数据准备] 数据准备异常: {e}")
@@ -676,6 +698,86 @@ class StockDataPreparer:
                 error_message=f"数据准备失败: {str(e)}",
                 suggestion="请检查网络连接或数据源配置"
             )
+
+    def _prepare_crypto_data(self, stock_code: str, period_days: int,
+                               analysis_date: str) -> StockDataPreparationResult:
+        """预获取加密货币数据"""
+        logger.info(f"📊 [加密货币数据] 开始准备{stock_code}的数据 (时长: {period_days}天)")
+
+        normalized_symbol = StockUtils.normalize_crypto_ticker(stock_code)
+        base, quote = StockUtils._parse_crypto_pair(normalized_symbol)
+        asset_name = f"{base}/{quote}" if base and quote else normalized_symbol
+
+        end_date = datetime.strptime(analysis_date, '%Y-%m-%d')
+        start_date = end_date - timedelta(days=period_days)
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+
+        cache_messages = []
+        has_basic_info = False
+        has_historical_data = False
+
+        try:
+            from tradingagents.dataflows.interface import (
+                get_crypto_info_unified,
+                get_crypto_price_unified,
+            )
+
+            info_result = get_crypto_info_unified(normalized_symbol)
+            if info_result.get('success'):
+                has_basic_info = True
+                asset_name = info_result.get('display_name', asset_name)
+                cache_msg = info_result.get('cache_status')
+                if cache_msg:
+                    cache_messages.append(cache_msg)
+            else:
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=normalized_symbol,
+                    market_type="加密货币",
+                    error_message=info_result.get('message', '无法获取加密货币基本信息'),
+                    suggestion="请检查交易对是否正确，例如 BTC-USD 或 ETHUSDT"
+                )
+
+            price_result = get_crypto_price_unified(normalized_symbol, start_date_str, end_date_str)
+            if price_result.get('success') and price_result.get('rows', 0) > 0:
+                has_historical_data = True
+                cache_msg = price_result.get('cache_status')
+                if cache_msg:
+                    cache_messages.append(cache_msg)
+            else:
+                return StockDataPreparationResult(
+                    is_valid=False,
+                    stock_code=normalized_symbol,
+                    market_type="加密货币",
+                    error_message=price_result.get('message', '无法获取加密货币历史数据'),
+                    suggestion="可能是交易对无历史数据或数据源暂时不可用，稍后重试"
+                )
+
+            cache_status = '; '.join(cache_messages) if cache_messages else '加密货币数据已缓存'
+
+            return StockDataPreparationResult(
+                is_valid=True,
+                stock_code=normalized_symbol,
+                market_type="加密货币",
+                stock_name=asset_name,
+                has_historical_data=has_historical_data,
+                has_basic_info=has_basic_info,
+                data_period_days=period_days,
+                cache_status=cache_status
+            )
+
+        except Exception as e:
+            logger.error(f"❌ [加密货币数据] 数据准备失败: {e}")
+            return StockDataPreparationResult(
+                is_valid=False,
+                stock_code=normalized_symbol,
+                market_type="加密货币",
+                error_message=f"数据准备失败: {str(e)}",
+                suggestion="请检查网络连接或稍后重试"
+            )
+
+
 
 
 
